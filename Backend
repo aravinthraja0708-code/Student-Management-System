@@ -1,0 +1,255 @@
+import sqlite3
+import re
+from flask import Flask, render_template, request, jsonify
+
+app = Flask(__name__)
+DB_NAME = 'students.db'
+
+def get_db_connection():
+    """Establishes and returns a connection to the SQLite database with row formatting."""
+    conn = sqlite3.connect(DB_NAME)
+    conn.row_factory = sqlite3.Row
+    return conn
+
+def init_db():
+    """Initializes the database schema and populates default sample records if empty."""
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    
+    # Create students table
+    cursor.execute('''
+        CREATE TABLE IF NOT EXISTS students (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            name TEXT NOT NULL,
+            register_number TEXT NOT NULL UNIQUE,
+            department TEXT NOT NULL,
+            year INTEGER NOT NULL,
+            email TEXT,
+            phone TEXT
+        )
+    ''')
+    
+    # Check if table is empty
+    cursor.execute('SELECT COUNT(*) FROM students')
+    count = cursor.fetchone()[0]
+    
+    if count == 0:
+        sample_students = [
+            ("Aarav Sharma", "7376211CS101", "CSE", 3, "aarav.sharma@example.com", "9876543210"),
+            ("Bhavna Patel", "7376211IT102", "IT", 2, "bhavna.patel@example.com", "9876543211"),
+            ("Chandran R", "7376211EC103", "ECE", 4, "chandran.r@example.com", "9876543212"),
+            ("Divya Krishnan", "7376211AD104", "AIDS", 1, "divya.k@example.com", "9876543213"),
+            ("Eshwar Kumar", "7376211CC105", "CCE", 3, "eshwar.k@example.com", "9876543214")
+        ]
+        cursor.executemany('''
+            INSERT INTO students (name, register_number, department, year, email, phone)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', sample_students)
+        conn.commit()
+        print("Database initialized with 5 sample students.")
+        
+    conn.close()
+
+def validate_student_data(data, is_update=False, current_id=None):
+    """Performs validation on student data. Returns (is_valid, error_message)."""
+    name = data.get('name', '').strip()
+    register_number = data.get('register_number', '').strip()
+    department = data.get('department', '').strip()
+    year = data.get('year')
+    email = data.get('email', '').strip()
+    phone = data.get('phone', '').strip()
+
+    if not name:
+        return False, "Student Name is required."
+    if not register_number:
+        return False, "Register Number is required."
+    if not department:
+        return False, "Department is required."
+    if year is None or year == '':
+        return False, "Year is required."
+    
+    # Validate Year numeric range (1 to 4)
+    try:
+        year_int = int(year)
+        if year_int < 1 or year_int > 4:
+            return False, "Year must be a number between 1 and 4."
+    except ValueError:
+        return False, "Year must be a valid integer."
+
+    # Email format validation if provided
+    if email:
+        email_regex = r'^[\w\.-]+@[\w\.-]+\.\w+$'
+        if not re.match(email_regex, email):
+            return False, "Invalid email address format."
+
+    # Phone validation if provided (basic length check)
+    if phone and not re.match(r'^\+?[0-9\s\-]{7,15}$', phone):
+        return False, "Invalid phone number format."
+
+    # Check for Unique Register Number in SQLite
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    if is_update and current_id:
+        cursor.execute('SELECT id FROM students WHERE register_number = ? AND id != ?', (register_number, current_id))
+    else:
+        cursor.execute('SELECT id FROM students WHERE register_number = ?', (register_number,))
+    
+    existing = cursor.fetchone()
+    conn.close()
+    
+    if existing:
+        return False, f"Register Number '{register_number}' already exists."
+
+    return True, None
+
+# ----------------- UI ROUTE -----------------
+
+@app.route('/')
+def index():
+    """Renders the main single-page CRUD application UI."""
+    return render_template('index.html')
+
+# ----------------- REST API ENDPOINTS -----------------
+
+@app.route('/api/students', methods=['GET'])
+def get_students():
+    """Fetch all students from the database."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM students ORDER BY id DESC')
+        students = [dict(row) for row in cursor.fetchall()]
+        conn.close()
+        return jsonify(students), 200
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+@app.route('/api/students/<int:student_id>', methods=['GET'])
+def get_student(student_id):
+    """Fetch a single student by ID."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('SELECT * FROM students WHERE id = ?', (student_id,))
+        student = cursor.fetchone()
+        conn.close()
+        
+        if student is None:
+            return jsonify({"error": "Student not found"}), 404
+            
+        return jsonify(dict(student)), 200
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+@app.route('/api/students', methods=['POST'])
+def add_student():
+    """Create a new student record."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON body provided"}), 400
+
+    is_valid, error_msg = validate_student_data(data, is_update=False)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            INSERT INTO students (name, register_number, department, year, email, phone)
+            VALUES (?, ?, ?, ?, ?, ?)
+        ''', (
+            data['name'].strip(),
+            data['register_number'].strip(),
+            data['department'].strip(),
+            int(data['year']),
+            data.get('email', '').strip(),
+            data.get('phone', '').strip()
+        ))
+        conn.commit()
+        new_id = cursor.lastrowid
+        conn.close()
+
+        return jsonify({
+            "message": "Student created successfully!",
+            "id": new_id
+        }), 201
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Register number must be unique."}), 400
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+@app.route('/api/students/<int:student_id>', methods=['PUT'])
+def update_student(student_id):
+    """Update an existing student record."""
+    data = request.get_json()
+    if not data:
+        return jsonify({"error": "Invalid JSON body provided"}), 400
+
+    # Verify student exists
+    conn = get_db_connection()
+    cursor = conn.cursor()
+    cursor.execute('SELECT id FROM students WHERE id = ?', (student_id,))
+    if not cursor.fetchone():
+        conn.close()
+        return jsonify({"error": "Student not found"}), 404
+    conn.close()
+
+    is_valid, error_msg = validate_student_data(data, is_update=True, current_id=student_id)
+    if not is_valid:
+        return jsonify({"error": error_msg}), 400
+
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        cursor.execute('''
+            UPDATE students
+            SET name = ?, register_number = ?, department = ?, year = ?, email = ?, phone = ?
+            WHERE id = ?
+        ''', (
+            data['name'].strip(),
+            data['register_number'].strip(),
+            data['department'].strip(),
+            int(data['year']),
+            data.get('email', '').strip(),
+            data.get('phone', '').strip(),
+            student_id
+        ))
+        conn.commit()
+        conn.close()
+
+        return jsonify({"message": "Student updated successfully!"}), 200
+    except sqlite3.IntegrityError:
+        return jsonify({"error": "Register number must be unique."}), 400
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+@app.route('/api/students/<int:student_id>', methods=['DELETE'])
+def delete_student(student_id):
+    """Delete a student record."""
+    try:
+        conn = get_db_connection()
+        cursor = conn.cursor()
+        
+        # Check if student exists
+        cursor.execute('SELECT id FROM students WHERE id = ?', (student_id,))
+        if not cursor.fetchone():
+            conn.close()
+            return jsonify({"error": "Student not found"}), 404
+            
+        cursor.execute('SELECT name FROM students WHERE id = ?', (student_id,))
+        student_name = cursor.fetchone()['name']
+        
+        cursor.execute('DELETE FROM students WHERE id = ?', (student_id,))
+        conn.commit()
+        conn.close()
+        
+        return jsonify({"message": f"Student '{student_name}' deleted successfully!"}), 200
+    except Exception as e:
+        return jsonify({"error": f"Database error: {str(e)}"}), 500
+
+if __name__ == '__main__':
+    # Initialize DB schema & sample data before app run
+    init_db()
+    print("Starting Flask Student Management System server on http://127.0.0.1:5000 ...")
+    app.run(host='127.0.0.1', port=5000, debug=True)
