@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Student Management System | College Mini Project</title>
+    <!-- Google Fonts -->
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <!-- Font Awesome Icons -->
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    <!-- Custom CSS -->
+    <link rel="stylesheet" href="{{ url_for('static', filename='style.css') }}">
+</head>
+<body>
+
+    <!-- Header Navigation -->
+    <header class="header">
+        <div class="header-container">
+            <div class="brand">
+                <i class="fa-solid fa-graduation-cap brand-icon"></i>
+                <div>
+                    <h1 class="title">Student Management System</h1>
+                    <p class="subtitle">CRUD Based Web Application</p>
+                </div>
+            </div>
+            <div class="badge">
+                <i class="fa-solid fa-database"></i> SQLite Database Connected
+            </div>
+        </div>
+    </header>
+
+    <main class="main-container">
+
+        <!-- Notification Toast / Alert Banner -->
+        <div id="alert-banner" class="alert hidden">
+            <span id="alert-message"></span>
+            <button class="alert-close" onclick="closeAlert()">&times;</button>
+        </div>
+
+        <!-- Dashboard Statistics Cards -->
+        <section class="dashboard-grid">
+            <div class="card stat-card card-blue">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-users"></i>
+                </div>
+                <div class="stat-info">
+                    <h3 id="stat-total-students">0</h3>
+                    <p>Total Students</p>
+                </div>
+            </div>
+
+            <div class="card stat-card card-indigo">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-building-columns"></i>
+                </div>
+                <div class="stat-info">
+                    <h3 id="stat-departments">0</h3>
+                    <p>Departments</p>
+                </div>
+            </div>
+
+            <div class="card stat-card card-cyan">
+                <div class="stat-icon">
+                    <i class="fa-solid fa-user-graduate"></i>
+                </div>
+                <div class="stat-info">
+                    <h3 id="stat-current-year">0</h3>
+                    <p>4th Year Students</p>
+                </div>
+            </div>
+        </section>
+
+        <!-- Main Content Area: Form & Table Grid -->
+        <div class="content-grid">
+
+            <!-- Student Form Section -->
+            <section class="card form-card">
+                <div class="card-header">
+                    <h2 id="form-title"><i class="fa-solid fa-user-plus"></i> Add New Student</h2>
+                </div>
+                
+                <form id="student-form" onsubmit="handleFormSubmit(event)" novalidate>
+                    <!-- Hidden field for Student ID when editing -->
+                    <input type="hidden" id="student-id">
+
+                    <div class="form-group">
+                        <label for="name">Student Name <span class="required">*</span></label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-user"></i>
+                            <input type="text" id="name" placeholder="e.g. Aarav Sharma" required>
+                        </div>
+                        <small class="error-msg" id="name-error"></small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="register_number">Register Number <span class="required">*</span></label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-id-card"></i>
+                            <input type="text" id="register_number" placeholder="e.g. 7376211CS101" required>
+                        </div>
+                        <small class="error-msg" id="register_number-error"></small>
+                    </div>
+
+                    <div class="form-row">
+                        <div class="form-group half-width">
+                            <label for="department">Department <span class="required">*</span></label>
+                            <div class="input-icon-wrapper">
+                                <i class="fa-solid fa-book"></i>
+                                <select id="department" required>
+                                    <option value="">Select Dept</option>
+                                    <option value="CSE">CSE</option>
+                                    <option value="IT">IT</option>
+                                    <option value="ECE">ECE</option>
+                                    <option value="AIDS">AIDS</option>
+                                    <option value="CCE">CCE</option>
+                                    <option value="MECH">MECH</option>
+                                    <option value="EEE">EEE</option>
+                                </select>
+                            </div>
+                            <small class="error-msg" id="department-error"></small>
+                        </div>
+
+                        <div class="form-group half-width">
+                            <label for="year">Year <span class="required">*</span></label>
+                            <div class="input-icon-wrapper">
+                                <i class="fa-solid fa-calendar-days"></i>
+                                <select id="year" required>
+                                    <option value="">Select Year</option>
+                                    <option value="1">1st Year</option>
+                                    <option value="2">2nd Year</option>
+                                    <option value="3">3rd Year</option>
+                                    <option value="4">4th Year</option>
+                                </select>
+                            </div>
+                            <small class="error-msg" id="year-error"></small>
+                        </div>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="email">Email Address</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-envelope"></i>
+                            <input type="email" id="email" placeholder="e.g. student@college.edu">
+                        </div>
+                        <small class="error-msg" id="email-error"></small>
+                    </div>
+
+                    <div class="form-group">
+                        <label for="phone">Phone Number</label>
+                        <div class="input-icon-wrapper">
+                            <i class="fa-solid fa-phone"></i>
+                            <input type="tel" id="phone" placeholder="e.g. 9876543210">
+                        </div>
+                        <small class="error-msg" id="phone-error"></small>
+                    </div>
+
+                    <div class="form-actions">
+                        <button type="submit" id="btn-submit" class="btn btn-primary">
+                            <i class="fa-solid fa-user-plus"></i> Add Student
+                        </button>
+                        <button type="button" id="btn-clear" class="btn btn-secondary" onclick="resetForm()">
+                            <i class="fa-solid fa-rotate-right"></i> Clear
+                        </button>
+                    </div>
+                </form>
+            </section>
+
+            <!-- Student Table & Search Section -->
+            <section class="card table-card">
+                <div class="table-header-row">
+                    <h2><i class="fa-solid fa-list-check"></i> Student Directory</h2>
+                    
+                    <!-- Search Box -->
+                    <div class="search-box">
+                        <i class="fa-solid fa-magnifying-glass search-icon"></i>
+                        <input type="text" id="search-input" placeholder="Search by Name, Reg No, or Dept..." oninput="handleSearch()">
+                    </div>
+                </div>
+
+                <div class="table-responsive">
+                    <table class="student-table">
+                        <thead>
+                            <tr>
+                                <th>ID</th>
+                                <th>Name</th>
+                                <th>Register No</th>
+                                <th>Dept</th>
+                                <th>Year</th>
+                                <th>Email</th>
+                                <th>Phone</th>
+                                <th class="text-center">Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="student-table-body">
+                            <!-- Populated dynamically via script.js -->
+                            <tr>
+                                <td colspan="8" class="text-center loading-state">
+                                    <i class="fa-solid fa-spinner fa-spin"></i> Loading students...
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+
+                <div id="no-results" class="no-results hidden">
+                    <i class="fa-solid fa-folder-open"></i>
+                    <p>No matching student records found.</p>
+                </div>
+            </section>
+
+        </div>
+    </main>
+
+    <footer class="footer">
+        <p>&copy; 2026 Student Management System | Flask & SQLite Mini Project</p>
+    </footer>
+
+    <!-- Custom JS -->
+    <script src="{{ url_for('static', filename='script.js') }}"></script>
+</body>
+</html>
