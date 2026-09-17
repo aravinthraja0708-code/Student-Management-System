@@ -1,0 +1,352 @@
+/**
+ * Student Management System - Frontend Vanilla JavaScript
+ * Handles REST API fetch operations, DOM rendering, validation, and CRUD actions.
+ */
+
+// Global Application State
+let studentsList = [];
+let isEditing = false;
+let editingId = null;
+
+// Initialize on Document Load
+document.addEventListener('DOMContentLoaded', () => {
+    fetchStudents();
+});
+
+/**
+ * READ: Fetch all student records from Flask REST API
+ */
+async function fetchStudents() {
+    const tableBody = document.getElementById('student-table-body');
+    const noResults = document.getElementById('no-results');
+
+    try {
+        const response = await fetch('/api/students');
+        if (!response.ok) {
+            throw new Error(`Server returned HTTP ${response.status}`);
+        }
+
+        studentsList = await response.json();
+        renderTable(studentsList);
+        updateDashboard();
+    } catch (error) {
+        console.error('Error fetching students:', error);
+        tableBody.innerHTML = `
+            <tr>
+                <td colspan="8" class="text-center" style="color: var(--danger);">
+                    <i class="fa-solid fa-triangle-exclamation"></i> Failed to connect to server backend.
+                </td>
+            </tr>
+        `;
+        showAlert('Failed to fetch student data from backend API.', 'error');
+    }
+}
+
+/**
+ * Render Student Table Data into HTML
+ */
+function renderTable(data) {
+    const tableBody = document.getElementById('student-table-body');
+    const noResults = document.getElementById('no-results');
+
+    if (!data || data.length === 0) {
+        tableBody.innerHTML = '';
+        noResults.classList.remove('hidden');
+        return;
+    }
+
+    noResults.classList.add('hidden');
+    tableBody.innerHTML = data.map(student => `
+        <tr>
+            <td><strong>#${student.id}</strong></td>
+            <td><strong>${escapeHtml(student.name)}</strong></td>
+            <td><code>${escapeHtml(student.register_number)}</code></td>
+            <td><span class="dept-badge">${escapeHtml(student.department)}</span></td>
+            <td>Year ${student.year}</td>
+            <td>${student.email ? escapeHtml(student.email) : '<span style="color:#94a3b8;">N/A</span>'}</td>
+            <td>${student.phone ? escapeHtml(student.phone) : '<span style="color:#94a3b8;">N/A</span>'}</td>
+            <td class="text-center">
+                <div class="actions-cell">
+                    <button class="btn-action btn-edit" title="Edit Student" onclick="editStudent(${student.id})">
+                        <i class="fa-solid fa-pen"></i>
+                    </button>
+                    <button class="btn-action btn-delete" title="Delete Student" onclick="deleteStudent(${student.id}, '${escapeHtml(student.name)}')">
+                        <i class="fa-solid fa-trash-can"></i>
+                    </button>
+                </div>
+            </td>
+        </tr>
+    `).join('');
+}
+
+/**
+ * Update Dashboard Summary Statistic Cards
+ */
+function updateDashboard() {
+    const totalStudentsEl = document.getElementById('stat-total-students');
+    const totalDeptsEl = document.getElementById('stat-departments');
+    const currentYearEl = document.getElementById('stat-current-year');
+
+    // Total Count
+    totalStudentsEl.textContent = studentsList.length;
+
+    // Unique Department Count
+    const uniqueDepts = new Set(studentsList.map(s => s.department));
+    totalDeptsEl.textContent = uniqueDepts.size;
+
+    // 4th Year / Final Year Students Count
+    const year4Count = studentsList.filter(s => parseInt(s.year) === 4).length;
+    currentYearEl.textContent = year4Count;
+}
+
+/**
+ * SEARCH: Dynamic Filter for Name, Register Number, and Department
+ */
+function handleSearch() {
+    const query = document.getElementById('search-input').value.trim().toLowerCase();
+    
+    if (!query) {
+        renderTable(studentsList);
+        return;
+    }
+
+    const filtered = studentsList.filter(student => {
+        const nameMatch = student.name.toLowerCase().includes(query);
+        const regMatch = student.register_number.toLowerCase().includes(query);
+        const deptMatch = student.department.toLowerCase().includes(query);
+        return nameMatch || regMatch || deptMatch;
+    });
+
+    renderTable(filtered);
+}
+
+/**
+ * CREATE & UPDATE: Handle Form Submission
+ */
+async function handleFormSubmit(event) {
+    event.preventDefault();
+    clearInlineErrors();
+
+    // Extract input values
+    const name = document.getElementById('name').value.trim();
+    const register_number = document.getElementById('register_number').value.trim();
+    const department = document.getElementById('department').value.trim();
+    const year = document.getElementById('year').value.trim();
+    const email = document.getElementById('email').value.trim();
+    const phone = document.getElementById('phone').value.trim();
+
+    // Validate Input Fields
+    let isValid = true;
+
+    if (!name) {
+        showFieldError('name', 'Student name is required');
+        isValid = false;
+    }
+
+    if (!register_number) {
+        showFieldError('register_number', 'Register number is required');
+        isValid = false;
+    }
+
+    if (!department) {
+        showFieldError('department', 'Department selection is required');
+        isValid = false;
+    }
+
+    if (!year) {
+        showFieldError('year', 'Year selection is required');
+        isValid = false;
+    } else {
+        const yearInt = parseInt(year);
+        if (isNaN(yearInt) || yearInt < 1 || yearInt > 4) {
+            showFieldError('year', 'Year must be between 1 and 4');
+            isValid = false;
+        }
+    }
+
+    if (email && !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+        showFieldError('email', 'Enter a valid email address');
+        isValid = false;
+    }
+
+    if (!isValid) return;
+
+    // Prepare JSON payload
+    const payload = {
+        name,
+        register_number,
+        department,
+        year: intOrVal(year),
+        email,
+        phone
+    };
+
+    const submitBtn = document.getElementById('btn-submit');
+    const originalBtnText = submitBtn.innerHTML;
+    submitBtn.disabled = true;
+    submitBtn.innerHTML = `<i class="fa-solid fa-spinner fa-spin"></i> Saving...`;
+
+    try {
+        let response;
+        if (isEditing && editingId) {
+            // PUT Request: Update
+            response = await fetch(`/api/students/${editingId}`, {
+                method: 'PUT',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        } else {
+            // POST Request: Create
+            response = await fetch('/api/students', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify(payload)
+            });
+        }
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showAlert(data.message || 'Operation successful!', 'success');
+            resetForm();
+            fetchStudents();
+        } else {
+            showAlert(data.error || 'Server validation failed.', 'error');
+            if (data.error && data.error.includes('Register Number')) {
+                showFieldError('register_number', data.error);
+            }
+        }
+    } catch (error) {
+        console.error('API Submit Error:', error);
+        showAlert('Network error: Unable to complete request.', 'error');
+    } finally {
+        submitBtn.disabled = false;
+        submitBtn.innerHTML = originalBtnText;
+    }
+}
+
+/**
+ * UPDATE Pre-fill: Populate Form with Selected Student Data
+ */
+function editStudent(id) {
+    const student = studentsList.find(s => s.id === id);
+    if (!student) return;
+
+    clearInlineErrors();
+    isEditing = true;
+    editingId = id;
+
+    // Set Form values
+    document.getElementById('student-id').value = student.id;
+    document.getElementById('name').value = student.name;
+    document.getElementById('register_number').value = student.register_number;
+    document.getElementById('department').value = student.department;
+    document.getElementById('year').value = student.year;
+    document.getElementById('email').value = student.email || '';
+    document.getElementById('phone').value = student.phone || '';
+
+    // Update UI Elements
+    document.getElementById('form-title').innerHTML = `<i class="fa-solid fa-user-pen"></i> Update Student Details`;
+    const btnSubmit = document.getElementById('btn-submit');
+    btnSubmit.className = 'btn btn-warning';
+    btnSubmit.innerHTML = `<i class="fa-solid fa-pen-to-square"></i> Update Student`;
+
+    // Smooth scroll to form on smaller screens
+    document.querySelector('.form-card').scrollIntoView({ behavior: 'smooth' });
+}
+
+/**
+ * DELETE: Remove Student Record via API
+ */
+async function deleteStudent(id, name) {
+    const confirmed = confirm(`Are you sure you want to delete student:\n"${name}" (ID: ${id})?`);
+    if (!confirmed) return;
+
+    try {
+        const response = await fetch(`/api/students/${id}`, {
+            method: 'DELETE'
+        });
+
+        const data = await response.json();
+
+        if (response.ok) {
+            showAlert(data.message || 'Student record deleted.', 'success');
+            // Reset form if currently editing deleted student
+            if (isEditing && editingId === id) {
+                resetForm();
+            }
+            fetchStudents();
+        } else {
+            showAlert(data.error || 'Failed to delete student.', 'error');
+        }
+    } catch (error) {
+        console.error('Delete API Error:', error);
+        showAlert('Network error: Unable to delete student.', 'error');
+    }
+}
+
+/**
+ * Reset Form back to initial state
+ */
+function resetForm() {
+    document.getElementById('student-form').reset();
+    document.getElementById('student-id').value = '';
+    clearInlineErrors();
+
+    isEditing = false;
+    editingId = null;
+
+    document.getElementById('form-title').innerHTML = `<i class="fa-solid fa-user-plus"></i> Add New Student`;
+    const btnSubmit = document.getElementById('btn-submit');
+    btnSubmit.className = 'btn btn-primary';
+    btnSubmit.innerHTML = `<i class="fa-solid fa-user-plus"></i> Add Student`;
+}
+
+/**
+ * UI Helper Functions
+ */
+function showFieldError(fieldId, message) {
+    const errorEl = document.getElementById(`${fieldId}-error`);
+    if (errorEl) {
+        errorEl.textContent = message;
+    }
+}
+
+function clearInlineErrors() {
+    const errorEls = document.querySelectorAll('.error-msg');
+    errorEls.forEach(el => el.textContent = '');
+}
+
+function showAlert(message, type = 'success') {
+    const banner = document.getElementById('alert-banner');
+    const msgSpan = document.getElementById('alert-message');
+
+    banner.className = `alert ${type}`;
+    msgSpan.textContent = message;
+    banner.classList.remove('hidden');
+
+    // Auto dismiss alert after 5 seconds
+    setTimeout(() => {
+        closeAlert();
+    }, 5000);
+}
+
+function closeAlert() {
+    const banner = document.getElementById('alert-banner');
+    banner.classList.add('hidden');
+}
+
+function escapeHtml(text) {
+    if (!text) return '';
+    return text.toString()
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#039;");
+}
+
+function intOrVal(val) {
+    const p = parseInt(val);
+    return isNaN(p) ? val : p;
+}
